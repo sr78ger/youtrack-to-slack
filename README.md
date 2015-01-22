@@ -4,6 +4,8 @@ youtrack-to-slack.sh reads your Youtrack RSS feed and submits new tickets to sla
 
 **Please note:** This script is pretty hacky, but works fine under Mac OSX 10.10 and Linux and Youtrack 6.0
 
+youtrack-to-slack.sh requires no special programs on OSX or Linux, just ``curl``, ``awk``, ``sed``, ``tr``, ``sqlite3`` and ``perl`` for html entity decode.
+
 ### configure Slack
 
 Define the SLACK_URL with the URL you received after defining a Slack Incoming WebHook.
