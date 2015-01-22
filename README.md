@@ -54,5 +54,5 @@ YT_DB="/opt/youtrack-to-slack.sqlite3"
 Define the maximum number of notifications to send.
 
 ```shell
-YT_LIMIT=10
+LIMIT=10
 ```
