@@ -10,18 +10,18 @@ youtrack-to-slack.sh requires no special programs on OSX or Linux, just ``curl``
 
 Define the SLACK_URL with the URL you received after defining a Slack Incoming WebHook.
 
-```
+```shell
 SLACK_URL="https://hooks.slack.com/services/XXXXXXXXX/XXXXXXXXX/XXXXXXXXXXXXXXXXXXXXXXXX"
 ```
 
 Set the channel you want this script to post to.
 
-```
+```shell
 SLACK_CHANNEL="ticket"
 ```
 
 Set the name you want the script to use when posting messages.
-```
+```shell
 SLACK_USER="slackuser"
 ```
 
@@ -29,17 +29,17 @@ SLACK_USER="slackuser"
 
 Set the URL to your Youtrack instance. Make sure it ends with `/_rss_issues`
 
-```
+```shell
 YT_URL="http://example.com/_rss/issues"
 ```
 
 Set the username and password for Youtrack authorization. `/_rss_issues`
 
-```
+```shell
 YT_USER="username"
 ```
 
-```
+```shell
 YT_PASS="password"
 ```
 
@@ -47,12 +47,12 @@ YT_PASS="password"
 
 Set the path where the database should be created.
 
-```
+```shell
 YT_DB="/opt/youtrack-to-slack.sqlite3"
 ```
 
 Define the maximum number of notifications to send.
 
-```
+```shell
 YT_LIMIT=10
 ```
