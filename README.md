@@ -48,7 +48,7 @@ YT_PASS="password"
 Set the path where the database should be created.
 
 ```shell
-YT_DB="/opt/youtrack-to-slack.sqlite3"
+DB="/opt/youtrack-to-slack.sqlite3"
 ```
 
 Define the maximum number of notifications to send.
