@@ -48,7 +48,7 @@ if [ "$UNAME" == "Darwin" ]; then
    IS_OSX=1
 fi
 #sqlite3 $DB  "drop table $TABLE;"
-sqlite3 $DB  "create table if not exists $TABLE (id TEXT PRIMARY KEY, title TEXT, link TEXT, pubepoch INTEGER, user TEXT, userid TEXT );"
+sqlite3 $DB  "create table if not exists $TABLE (id TEXT PRIMARY KEY, title TEXT, link TEXT, pubepoch INTEGER, updatedepoch INTEGER, user TEXT, userid TEXT, state TEXT );"
 RC=$?
 if [ "$RC" -ne "0" ]; then
     echo "database failed: cannot create table $TABLE"
@@ -88,26 +88,61 @@ elif [[ $LINE =~ ^\<link ]]; then
 fi
 if [[ $LINE =~ ^\</item\> ]]; then
     URL=${YT_URL_ISSUE/\%issue\%/$YT_ID}
-    #curl -s -b $COOKIES $URL | xmllint --format -
-    #RC=$?
-    RC=0
-    if [ "$RC" -ne "0" ]; then
-        echo "getting issue $YT_ID details failed"
-    fi
-    exit 1
+    YT_STATE=""
+    YT_UPDATED=""
+    YT_UPDATED_EPOCH=""
+    LINE_NAME=""
+    curl -s -b $COOKIES $URL | xmllint --format - | ( while read LINE;
+    do
+        LINE_PLAIN=$(echo "$LINE" | head -n1 | cut -f2 -d'>' | cut -f1 -d'<')
+        if [[ "$LINE_NAME" == "updated" ]]; then
+            YT_UPDATED_EPOCH=$(echo "$LINE" | sed 's/[^0-9]//g' )
+            YT_UPDATED_EPOCH=$((YT_UPDATED_EPOCH/1000))
+            if [ "$IS_OSX" -eq "1" ]; then
+                YT_UPDATED=$(date -r $YT_UPDATED_EPOCH '+%Y/%m/%d %H:%M:%S')
+                else
+                YT_UPDATED=$(date -d @${YT_UPDATED_EPOCH} '+%Y/%m/%d %H:%M:%S')
+            fi
+        elif [[ "$LINE_NAME" == "state" ]]; then
+            YT_STATE=$LINE_PLAIN
+        fi
+        LINE_NAME=""
+        if [[ $LINE =~ name\=\"State\" ]]; then
+            LINE_NAME="state"
+        fi
+        if [[ $LINE =~ name\=\"updated\" ]]; then
+            LINE_NAME="updated"
+        fi
+    done
+    #echo "$YT_ID state=$YT_STATE"
     EXISTS=$(sqlite3 $DB  "select count(*) from $TABLE where id = '$YT_ID'";)
     if [ "$EXISTS" -ne "1" ]; then
-        sqlite3 $DB  "insert into $TABLE ( id, title, link, pubepoch, user, userid ) values ( '$YT_ID', '$YT_TITLE', '$YT_LINK', '$YT_EPOCH', '$YT_USER', '$YT_USERID' );"
+        sqlite3 $DB  "insert into $TABLE ( id, title, link, pubepoch, updatedepoch, user, userid, state ) values ( '$YT_ID', '$YT_TITLE', '$YT_LINK', '$YT_EPOCH', '$YT_UPDATED_EPOCH', '$YT_USER', '$YT_USERID', '$YT_STATE' );"
         COUNT=$((COUNT+1))
         if [ "$COUNT" -lt "$LIMIT" ]; then
-        MESSAGE="Ticket from $YT_USER: $YT_ID: $YT_TITLE, $YT_LINK ($YT_PUB)"
-        MESSAGE=$(echo $MESSAGE | sed 's/"/\"/g' | sed "s/'/\'/g" | tr '\n' ' ' | tr '\r' ' ' | tr -d '[' | tr -d ']' )
-        PAYLOAD=${SLACK_PAYLOAD/\%msg\%/$MESSAGE}
-        RET=$(curl -s -d "payload=$PAYLOAD" $SLACK_URL)
-        #echo "#${COUNT}: $RET: $PAYLOAD"
+            MESSAGE="New ticket from $YT_USER: $YT_ID: $YT_TITLE, $YT_LINK ($YT_PUB)"
+            MESSAGE=$(echo $MESSAGE | sed 's/"/\"/g' | sed "s/'/\'/g" | tr '\n' ' ' | tr '\r' ' ' | tr -d '[' | tr -d ']' )
+            PAYLOAD=${SLACK_PAYLOAD/\%msg\%/$MESSAGE}
+            RET=$(curl -s -d "payload=$PAYLOAD" $SLACK_URL)
+            #echo "#${COUNT}: $RET: $PAYLOAD"
+        fi
+    else
+        UPDATED=$(sqlite3 $DB  "select count(*) from $TABLE where id = '$YT_ID' AND updatedepoch < '$YT_UPDATED_EPOCH'";)
+        if [ "$UPDATED" -ne "1" ]; then
+            sqlite3 $DB  "update $TABLE set updatedepoch = '$YT_UPDATED_EPOCH', state = '$YT_STATE' where id = '$YT_ID');"
+            COUNT=$((COUNT+1))
+            if [ "$COUNT" -lt "$LIMIT" ]; then
+                MESSAGE="Updated ticket from $YT_USER ($YT_STATE): $YT_ID: $YT_TITLE, $YT_LINK ($YT_UPDATED)"
+                MESSAGE=$(echo $MESSAGE | sed 's/"/\"/g' | sed "s/'/\'/g" | tr '\n' ' ' | tr '\r' ' ' | tr -d '[' | tr -d ']' )
+                PAYLOAD=${SLACK_PAYLOAD/\%msg\%/$MESSAGE}
+                RET=$(curl -s -d "payload=$PAYLOAD" $SLACK_URL)
+                #echo "#${COUNT}: $RET: $PAYLOAD"
+            fi
         fi
     fi
+    )
 fi
 done
 )
+echo "done"
 #sqlite3 $DB "select * from $TABLE;"
