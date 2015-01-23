@@ -1,4 +1,5 @@
 #!/bin/sh
+DEBUG=0
 SLACK_URL="https://hooks.slack.com/services/XXXXXXXXX/XXXXXXXXX/XXXXXXXXXXXXXXXXXXXXXXXX"
 SLACK_CHANNEL="ticket"
 SLACK_USER="slackuser"
@@ -114,29 +115,49 @@ if [[ $LINE =~ ^\</item\> ]]; then
             LINE_NAME="updated"
         fi
     done
-    #echo "$YT_ID state=$YT_STATE"
     EXISTS=$(sqlite3 $DB  "select count(*) from $TABLE where id = '$YT_ID'";)
+    if [ "$DEBUG" -eq "1" ]; then
+ 	echo "ticket $YT_ID... (exists=$EXISTS)"
+    fi
     if [ "$EXISTS" -ne "1" ]; then
-        sqlite3 $DB  "insert into $TABLE ( id, title, link, pubepoch, updatedepoch, user, userid, state ) values ( '$YT_ID', '$YT_TITLE', '$YT_LINK', '$YT_EPOCH', '$YT_UPDATED_EPOCH', '$YT_USER', '$YT_USERID', '$YT_STATE' );"
+        SQL="insert into $TABLE ( id, title, link, pubepoch, updatedepoch, user, userid, state ) values ( '$YT_ID', '$YT_TITLE', '$YT_LINK', '$YT_EPOCH', '$YT_UPDATED_EPOCH', '$YT_USER', '$YT_USERID', '$YT_STATE' );"
+        sqlite3 $DB "$SQL"
+        EXISTS=$(sqlite3 $DB  "select count(*) from $TABLE where id = '$YT_ID'";)
+        if [ "$EXISTS" -ne "1" ]; then
+ 	   echo "ticket $YT_ID inserted, but reading failed" 
+	   exit 1
+        fi
         COUNT=$((COUNT+1))
         if [ "$COUNT" -lt "$LIMIT" ]; then
             MESSAGE="New ticket from $YT_USER: $YT_ID: $YT_TITLE, $YT_LINK ($YT_PUB)"
             MESSAGE=$(echo $MESSAGE | sed 's/"/\"/g' | sed "s/'/\'/g" | tr '\n' ' ' | tr '\r' ' ' | tr -d '[' | tr -d ']' )
             PAYLOAD=${SLACK_PAYLOAD/\%msg\%/$MESSAGE}
-            RET=$(curl -s -d "payload=$PAYLOAD" $SLACK_URL)
-            #echo "#${COUNT}: $RET: $PAYLOAD"
+	    if [ "$DEBUG" -eq "1" ]; then
+		echo $PAYLOAD
+    	    else
+                RET=$(curl -s -d "payload=$PAYLOAD" $SLACK_URL)
+      	        #echo "#${COUNT}: $RET: $PAYLOAD"
+	    fi
         fi
     else
         UPDATED=$(sqlite3 $DB  "select count(*) from $TABLE where id = '$YT_ID' AND updatedepoch < '$YT_UPDATED_EPOCH'";)
-        if [ "$UPDATED" -ne "1" ]; then
-            sqlite3 $DB  "update $TABLE set updatedepoch = '$YT_UPDATED_EPOCH', state = '$YT_STATE' where id = '$YT_ID');"
+	RC=$?
+        if [ "$UPDATED" -eq "1" ]; then
+	    if [ "$DEBUG" -eq "1" ]; then
+		echo "found an update for $YT_ID, $YT_UPDATED ($YT_UPDATED_EPOCH), got $UPDATED (RC=$RC)"
+            fi
+            sqlite3 $DB  "update $TABLE set updatedepoch = '$YT_UPDATED_EPOCH', state = '$YT_STATE' where id = '$YT_ID';"
             COUNT=$((COUNT+1))
             if [ "$COUNT" -lt "$LIMIT" ]; then
                 MESSAGE="Updated ticket from $YT_USER ($YT_STATE): $YT_ID: $YT_TITLE, $YT_LINK ($YT_UPDATED)"
                 MESSAGE=$(echo $MESSAGE | sed 's/"/\"/g' | sed "s/'/\'/g" | tr '\n' ' ' | tr '\r' ' ' | tr -d '[' | tr -d ']' )
                 PAYLOAD=${SLACK_PAYLOAD/\%msg\%/$MESSAGE}
-                RET=$(curl -s -d "payload=$PAYLOAD" $SLACK_URL)
-                #echo "#${COUNT}: $RET: $PAYLOAD"
+		if [ "$DEBUG" -eq "1" ]; then
+			echo $PAYLOAD
+		else
+	                RET=$(curl -s -d "payload=$PAYLOAD" $SLACK_URL)
+       	        	#echo "#${COUNT}: $RET: $PAYLOAD"
+		fi
             fi
         fi
     fi
