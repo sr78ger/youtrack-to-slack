@@ -27,10 +27,10 @@ SLACK_USER="slackuser"
 
 ### configure Youtrack
 
-Set the URL to your Youtrack instance. Make sure it ends with `/_rss_issues`
+Set the base URL to your Youtrack instance. 
 
 ```shell
-YT_URL="http://example.com/_rss/issues"
+YT_BASE_URL="http://example.com"
 ```
 
 Set the username and password for Youtrack authorization. `/_rss_issues`
