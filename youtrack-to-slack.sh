@@ -10,12 +10,12 @@ LIMIT=10
 DATA_DIR=~
 # --- define files for DB and cookie storage --
 DB=${DATA_DIR}/youtrack.sqlite3
-COOKIES=${DATA_DIR}/youtrack.sqlite3
+COOKIES=${DATA_DIR}/youtrack.cookies
 TABLE=tickets
 ## -- setup youtrack URLs --
 YT_URL_LOGIN="${YT_BASE_URL}/rest/user/login"
 YT_URL_FEED="${YT_BASE_URL}/_rss/issues"
-YT_URL_ISSUE="${YT_BASE_URL}rest/issue/%issue%"
+YT_URL_ISSUE="${YT_BASE_URL}/rest/issue/%issue%"
 ## -- check for DB file --
 if [ ! -e "$DB" ] ; then
     touch "$DB" 2&>1
@@ -25,10 +25,15 @@ if [ ! -w "$DB" ] ; then
     echo "cannot create database $DB"
     exit 1
 fi
+rm -f $COOKIES
 # -- get cookie from youtrack --
-RET=$(curl -s $YT_URL_LOGIN --cookie $COOKIES -H"Content-type: application/x-www-form-urlencoded" -d"login=${YT_USER}&password=${YT_PASS}")
+RET=$(curl -s $YT_URL_LOGIN -c $COOKIES -H"Content-type: application/x-www-form-urlencoded" -d"login=${YT_USER}&password=${YT_PASS}")
 if [ "$RET" != "<login>ok</login>" ]; then
-    echo "authentication failed: $RET"
+    echo "authentication failed, got '$RET' after $YT_URL_LOGIN"
+    exit 1
+fi
+if [ ! -e "$COOKIES" ] ; then
+    echo "cookies file $COOKIES missing"
     exit 1
 fi
 # -- setup slack payload --
@@ -78,11 +83,18 @@ elif [[ $LINE =~ ^\<img ]]; then
     YT_USERID=$(echo "$YT_USER" | cut -f2 -d'(' | tr -d ')')
     YT_USER=${YT_USER%\(*}
     YT_USER=$(echo "$YT_USER" | sed -e 's/^ *//' -e 's/ *$//' )
-    echo "'$YT_USER' from '$YT_USERID'"
 elif [[ $LINE =~ ^\<link ]]; then
     YT_LINK=$(echo "$LINE" | awk -v FS="(<link>|</link>)" '{print $2}' )
 fi
 if [[ $LINE =~ ^\</item\> ]]; then
+    URL=${YT_URL_ISSUE/\%issue\%/$YT_ID}
+    #curl -s -b $COOKIES $URL | xmllint --format -
+    #RC=$?
+    RC=0
+    if [ "$RC" -ne "0" ]; then
+        echo "getting issue $YT_ID details failed"
+    fi
+    exit 1
     EXISTS=$(sqlite3 $DB  "select count(*) from $TABLE where id = '$YT_ID'";)
     if [ "$EXISTS" -ne "1" ]; then
         sqlite3 $DB  "insert into $TABLE ( id, title, link, pubepoch, user, userid ) values ( '$YT_ID', '$YT_TITLE', '$YT_LINK', '$YT_EPOCH', '$YT_USER', '$YT_USERID' );"
