@@ -1,20 +1,18 @@
 #!/bin/sh
-SLACK_URL="https://hooks.slack.com/services/XXXXXXXXX/XXXXXXXXX/XXXXXXXXXXXXXXXXXXXXXXXX"
-SLACK_CHANNEL="ticket"
-SLACK_USER="slackuser"
-SLACK_EMOJI=":hear_no_evil"
-YT_BASE_URL="http://youtrack.url"
-YT_USER="username"
-YT_PASS="password"
-LIMIT=10
-DATA_DIR=~
+if [ "$#" -eq 0 ];then
+    DIR=$( cd "$( dirname "$0" )" && pwd )
+    CONFIG=${DIR}/settings.sh
+    else
+    CONFIG=$1
+fi
+source $CONFIG
 # --- define files for DB and cookie storage --
 DB=${DATA_DIR}/youtrack.sqlite3
 COOKIES=${DATA_DIR}/youtrack.cookies
 TABLE=tickets
 ## -- setup youtrack URLs --
-DEBUG=0
-CURL=1
+DEBUG=1
+CURL=0
 YT_URL_LOGIN="${YT_BASE_URL}/rest/user/login"
 YT_URL_FEED="${YT_BASE_URL}/_rss/issues"
 YT_URL_ISSUE="${YT_BASE_URL}/rest/issue/%issue%"
@@ -31,7 +29,7 @@ rm -f $COOKIES
 # -- get cookie from youtrack --
 RET=$(curl -s $YT_URL_LOGIN -c $COOKIES -H"Content-type: application/x-www-form-urlencoded" -d"login=${YT_USER}&password=${YT_PASS}")
 if [ "$RET" != "<login>ok</login>" ]; then
-    echo "authentication failed, got '$RET' after $YT_URL_LOGIN"
+    echo "authentication failed, got '$RET' ($?) after $YT_URL_LOGIN"
     exit 1
 fi
 if [ ! -e "$COOKIES" ] ; then
@@ -50,7 +48,7 @@ if [ "$UNAME" == "Darwin" ]; then
    IS_OSX=1
 fi
 #sqlite3 $DB  "drop table $TABLE;"
-sqlite3 $DB  "create table if not exists $TABLE (id TEXT PRIMARY KEY, title TEXT, link TEXT, pubepoch INTEGER, updatedepoch INTEGER, user TEXT, userid TEXT, state TEXT );"
+sqlite3 $DB  "create table if not exists $TABLE (id TEXT PRIMARY KEY, title TEXT, link TEXT, pubepoch INTEGER, updatedepoch INTEGER, user TEXT, userid TEXT, state TEXT, updater TEXT, updaterfullname TEXT, reporter TEXT, reporterfullname TEXT, created INTEGER );"
 RC=$?
 if [ "$RC" -ne "0" ]; then
     echo "database failed: cannot create table $TABLE"
@@ -94,6 +92,11 @@ if [[ $LINE =~ ^\</item\> ]]; then
     YT_UPDATED=""
     YT_UPDATED_EPOCH=""
     LINE_NAME=""
+    YT_UPDATER_NAME=""
+    YT_UPDATER_FULLNAME=""
+    YT_REPORTER_NAME=""
+    YT_REPORTER_FULLNAME=""
+    YT_CREATED=""
     if [ "$DEBUG" -eq "1" ]; then
      	echo "requesting ticket $YT_ID details via REST API: $URL"
     fi
@@ -108,6 +111,16 @@ if [[ $LINE =~ ^\</item\> ]]; then
                 else
                 YT_UPDATED=$(date -d @${YT_UPDATED_EPOCH} '+%Y/%m/%d %H:%M:%S')
             fi
+        elif [[ "$LINE_NAME" == "created" ]]; then
+            YT_CREATED=$(echo "$LINE" | sed 's/[^0-9]//g' )
+        elif [[ "$LINE_NAME" == "reporterName" ]]; then
+            YT_REPORTER_NAME=$LINE_PLAIN
+        elif [[ "$LINE_NAME" == "reporterFullName" ]]; then
+            YT_REPORTER_FULLNAME=$LINE_PLAIN
+        elif [[ "$LINE_NAME" == "updaterName" ]]; then
+            YT_UPDATER_NAME=$LINE_PLAIN
+        elif [[ "$LINE_NAME" == "updaterFullName" ]]; then
+            YT_UPDATER_FULLNAME=$LINE_PLAIN
         elif [[ "$LINE_NAME" == "state" ]]; then
             YT_STATE=$LINE_PLAIN
         fi
@@ -115,19 +128,34 @@ if [[ $LINE =~ ^\</item\> ]]; then
         if [[ $LINE =~ name\=\"State\" ]]; then
             LINE_NAME="state"
         fi
+        if [[ $LINE =~ name\=\"created\" ]]; then
+            LINE_NAME="created"
+        fi
+        if [[ $LINE =~ name\=\"reporterFullName\" ]]; then
+            LINE_NAME="reporterFullName"
+        fi
+        if [[ $LINE =~ name\=\"reporterName\" ]]; then
+            LINE_NAME="reporterName"
+        fi
+        if [[ $LINE =~ name\=\"updaterFullName\" ]]; then
+            LINE_NAME="updaterFullName"
+        fi
+        if [[ $LINE =~ name\=\"updaterName\" ]]; then
+            LINE_NAME="updaterName"
+        fi
         if [[ $LINE =~ name\=\"updated\" ]]; then
             LINE_NAME="updated"
         fi
     done
     if [ "$DEBUG" -eq "1" ]; then
-     	echo "checking if ticket with ID $YT_ID exists..."
+     	echo "checking if ticket with ID $YT_ID exists... (created=$YT_CREATED, reporterName=$YT_REPORTER_NAME, reporterFullname=$YT_REPORTER_FULLNAME, updaterName=$YT_UPDATER_NAME, updaterFullname=$YT_UPDATER_FULLNAME)"
     fi
     EXISTS=$(sqlite3 $DB  "select count(*) from $TABLE where id = '$YT_ID'";)
     if [ "$DEBUG" -eq "1" ]; then
      	echo "ticket $YT_ID... (exists=$EXISTS)"
     fi
     if [ "$EXISTS" -ne "1" ]; then
-        SQL="insert into $TABLE ( id, title, link, pubepoch, updatedepoch, user, userid, state ) values ( '$YT_ID', '$YT_TITLE', '$YT_LINK', '$YT_EPOCH', '$YT_UPDATED_EPOCH', '$YT_USER', '$YT_USERID', '$YT_STATE' );"
+        SQL="insert into $TABLE ( id, title, link, pubepoch, updatedepoch, user, userid, state, reporter, reporterfullname, updater, updaterfullname, created ) values ( '$YT_ID', '$YT_TITLE', '$YT_LINK', '$YT_EPOCH', '$YT_UPDATED_EPOCH', '$YT_USER', '$YT_USERID', '$YT_STATE', '$YT_REPORTER_NAME', '$YT_REPORTER_FULLNAME', '$YT_UPDATER_NAME', '$YT_UPDATER_FULLNAME', '$YT_CREATED' );"
         if [ "$DEBUG" -eq "1" ]; then
      	echo "insert ticket $YT_ID: $SQL"
         fi
@@ -159,10 +187,10 @@ if [[ $LINE =~ ^\</item\> ]]; then
 	        if [ "$DEBUG" -eq "1" ]; then
 		        echo "found an update for $YT_ID, $YT_UPDATED ($YT_UPDATED_EPOCH), got $UPDATED (RC=$RC)"
             fi
-            sqlite3 $DB  "update $TABLE set updatedepoch = '$YT_UPDATED_EPOCH', state = '$YT_STATE' where id = '$YT_ID';"
+            sqlite3 $DB  "update $TABLE set updatedepoch = '$YT_UPDATED_EPOCH', state = '$YT_STATE', updater='$YT_UPDATER_NAME', updaterfullname='$YT_UPDATER_FULLNAME' where id = '$YT_ID';"
             COUNT=$((COUNT+1))
             if [ "$COUNT" -lt "$LIMIT" ]; then
-                MESSAGE="Updated ticket from $YT_USER ($YT_STATE): $YT_ID: $YT_TITLE, $YT_LINK ($YT_UPDATED)"
+                MESSAGE="Ticket $YT_ID updated by $YT_UPDATER_FULLNAME, state $YT_STATE, $YT_LINK"
                 MESSAGE=$(echo $MESSAGE | sed 's/"/\"/g' | sed "s/'/\'/g" | tr '\n' ' ' | tr '\r' ' ' | tr -d '[' | tr -d ']' )
                 PAYLOAD=${SLACK_PAYLOAD/\%msg\%/$MESSAGE}
 		        if [ "$DEBUG" -eq "1" ]; then
