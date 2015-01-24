@@ -11,8 +11,6 @@ DB=${DATA_DIR}/youtrack.sqlite3
 COOKIES=${DATA_DIR}/youtrack.cookies
 TABLE=tickets
 ## -- setup youtrack URLs --
-DEBUG=1
-CURL=0
 YT_URL_LOGIN="${YT_BASE_URL}/rest/user/login"
 YT_URL_FEED="${YT_BASE_URL}/_rss/issues"
 YT_URL_ISSUE="${YT_BASE_URL}/rest/issue/%issue%"

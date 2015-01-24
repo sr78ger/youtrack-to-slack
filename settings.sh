@@ -8,3 +8,5 @@ YT_USER="username"
 YT_PASS="password"
 LIMIT=10
 DATA_DIR=~
+DEBUG=0
+CURL=1
