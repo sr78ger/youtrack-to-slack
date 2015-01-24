@@ -4,7 +4,7 @@ youtrack-to-slack.sh reads your Youtrack RSS feed and submits new tickets to sla
 
 **Please note:** This script is pretty hacky, but works fine under Mac OSX 10.10 and Linux and Youtrack 6.0
 
-youtrack-to-slack.sh requires no special programs on OSX or Linux, just ``curl``, ``awk``, ``sed``, ``tr``, ``sqlite3``, ``xmllint` and ``perl`` for html entity decode.
+youtrack-to-slack.sh requires no special programs on OSX or Linux, just ``curl``, ``awk``, ``sed``, ``tr``, ``sqlite3``, ``xmllint`` and ``perl`` for html entity decode.
 
 ### configure Slack
 
@@ -45,10 +45,10 @@ YT_PASS="password"
 
 ### configure sqlite database and limit
 
-Set the path where the database should be created.
+Set the path where the database and cookie file should be created.
 
 ```shell
-DB="/opt/youtrack-to-slack.sqlite3"
+DATA_DIR="/opt/youtrack-to-slack/"
 ```
 
 Define the maximum number of notifications to send.
