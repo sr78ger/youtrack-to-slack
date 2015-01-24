@@ -1,5 +1,4 @@
 #!/bin/sh
-DEBUG=0
 SLACK_URL="https://hooks.slack.com/services/XXXXXXXXX/XXXXXXXXX/XXXXXXXXXXXXXXXXXXXXXXXX"
 SLACK_CHANNEL="ticket"
 SLACK_USER="slackuser"
@@ -14,6 +13,8 @@ DB=${DATA_DIR}/youtrack.sqlite3
 COOKIES=${DATA_DIR}/youtrack.cookies
 TABLE=tickets
 ## -- setup youtrack URLs --
+DEBUG=0
+CURL=1
 YT_URL_LOGIN="${YT_BASE_URL}/rest/user/login"
 YT_URL_FEED="${YT_BASE_URL}/_rss/issues"
 YT_URL_ISSUE="${YT_BASE_URL}/rest/issue/%issue%"
@@ -93,6 +94,9 @@ if [[ $LINE =~ ^\</item\> ]]; then
     YT_UPDATED=""
     YT_UPDATED_EPOCH=""
     LINE_NAME=""
+    if [ "$DEBUG" -eq "1" ]; then
+     	echo "requesting ticket $YT_ID details via REST API: $URL"
+    fi
     curl -s -b $COOKIES $URL | xmllint --format - | ( while read LINE;
     do
         LINE_PLAIN=$(echo "$LINE" | head -n1 | cut -f2 -d'>' | cut -f1 -d'<')
@@ -115,16 +119,22 @@ if [[ $LINE =~ ^\</item\> ]]; then
             LINE_NAME="updated"
         fi
     done
+    if [ "$DEBUG" -eq "1" ]; then
+     	echo "checking if ticket with ID $YT_ID exists..."
+    fi
     EXISTS=$(sqlite3 $DB  "select count(*) from $TABLE where id = '$YT_ID'";)
     if [ "$DEBUG" -eq "1" ]; then
- 	echo "ticket $YT_ID... (exists=$EXISTS)"
+     	echo "ticket $YT_ID... (exists=$EXISTS)"
     fi
     if [ "$EXISTS" -ne "1" ]; then
         SQL="insert into $TABLE ( id, title, link, pubepoch, updatedepoch, user, userid, state ) values ( '$YT_ID', '$YT_TITLE', '$YT_LINK', '$YT_EPOCH', '$YT_UPDATED_EPOCH', '$YT_USER', '$YT_USERID', '$YT_STATE' );"
+        if [ "$DEBUG" -eq "1" ]; then
+     	echo "insert ticket $YT_ID: $SQL"
+        fi
         sqlite3 $DB "$SQL"
         EXISTS=$(sqlite3 $DB  "select count(*) from $TABLE where id = '$YT_ID'";)
         if [ "$EXISTS" -ne "1" ]; then
- 	   echo "ticket $YT_ID inserted, but reading failed" 
+ 	   echo "ticket $YT_ID inserted, but reading failed"
 	   exit 1
         fi
         COUNT=$((COUNT+1))
@@ -135,16 +145,19 @@ if [[ $LINE =~ ^\</item\> ]]; then
 	    if [ "$DEBUG" -eq "1" ]; then
 		echo $PAYLOAD
     	    else
+		        if [ "$CURL" -eq "1" ]; then
                 RET=$(curl -s -d "payload=$PAYLOAD" $SLACK_URL)
+                fi
       	        #echo "#${COUNT}: $RET: $PAYLOAD"
 	    fi
         fi
     else
-        UPDATED=$(sqlite3 $DB  "select count(*) from $TABLE where id = '$YT_ID' AND updatedepoch < '$YT_UPDATED_EPOCH'";)
-	RC=$?
-        if [ "$UPDATED" -eq "1" ]; then
-	    if [ "$DEBUG" -eq "1" ]; then
-		echo "found an update for $YT_ID, $YT_UPDATED ($YT_UPDATED_EPOCH), got $UPDATED (RC=$RC)"
+        UPDATED=$(sqlite3 $DB  "select updatedepoch from $TABLE where id = '$YT_ID';";)
+	    RC=$?
+	    echo "compare $UPDATED ($YT_ID) with $YT_UPDATED_EPOCH"
+        if [ "$UPDATED" -lt "$YT_UPDATED_EPOCH" ] 2>/dev/null; then
+	        if [ "$DEBUG" -eq "1" ]; then
+		        echo "found an update for $YT_ID, $YT_UPDATED ($YT_UPDATED_EPOCH), got $UPDATED (RC=$RC)"
             fi
             sqlite3 $DB  "update $TABLE set updatedepoch = '$YT_UPDATED_EPOCH', state = '$YT_STATE' where id = '$YT_ID';"
             COUNT=$((COUNT+1))
@@ -152,12 +165,16 @@ if [[ $LINE =~ ^\</item\> ]]; then
                 MESSAGE="Updated ticket from $YT_USER ($YT_STATE): $YT_ID: $YT_TITLE, $YT_LINK ($YT_UPDATED)"
                 MESSAGE=$(echo $MESSAGE | sed 's/"/\"/g' | sed "s/'/\'/g" | tr '\n' ' ' | tr '\r' ' ' | tr -d '[' | tr -d ']' )
                 PAYLOAD=${SLACK_PAYLOAD/\%msg\%/$MESSAGE}
-		if [ "$DEBUG" -eq "1" ]; then
-			echo $PAYLOAD
-		else
-	                RET=$(curl -s -d "payload=$PAYLOAD" $SLACK_URL)
-       	        	#echo "#${COUNT}: $RET: $PAYLOAD"
-		fi
+		        if [ "$DEBUG" -eq "1" ]; then
+			        echo $PAYLOAD
+		        else if [ "$CURL" -eq "1" ]; then
+    	                RET=$(curl -s -d "payload=$PAYLOAD" $SLACK_URL)
+                     fi
+		        fi
+            fi
+        else
+	        if [ "$DEBUG" -eq "1" ]; then
+		        echo "ticket $YT_ID not updated"
             fi
         fi
     fi
@@ -167,3 +184,4 @@ done
 )
 echo "done"
 #sqlite3 $DB "select * from $TABLE;"
+
